@@ -211,7 +211,7 @@ export default function SocialStoryForm() {
           </h1>
         </div>
         <p className="text-muted-foreground text-lg">
-          Create personalized video social stories for your special needs students
+          Create personalized video social stories for your students
         </p>
       </div>
 
