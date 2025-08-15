@@ -41,16 +41,3 @@ Monorepo with:
    npm run dev
    # App at http://localhost:5173
    ```
-
-## Deployment (Vercel + any backend host)
-
-- Frontend (Vercel):
-  - Set Environment Variable: `VITE_API_BASE_URL` to your backend URL (e.g., `https://api.yourdomain.com`).
-  - Build command: `npm run build` (auto-detected), Output: `dist/`.
-
-- Backend (example: Railway/Render/Fly):
-  - Set env vars: `OPENAI_API_KEY`, `REPLICATE_API_TOKEN`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`.
-  - Set `ALLOWED_ORIGINS` to your Vercel URL(s), e.g., `https://your-app.vercel.app`.
-  - Start command: `uvicorn social_story.app:app --host 0.0.0.0 --port 8000`.
-
-Once deployed, update Vercel `VITE_API_BASE_URL` to the backend’s HTTPS URL.
