@@ -8,71 +8,57 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { BookOpen, Sparkles, Clock, Download, CheckCircle, AlertCircle, RefreshCw, FileVideo, Timer } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-
 interface SocialStoryData {
   situation: string;
   setting: string;
   age?: number;
   reading_level?: string;
   diagnosis_summary?: string;
-  words_to_avoid?: string[];
-  voice_preset?: string;
 }
-
 interface JobStatus {
   job_id: string;
   status: "queued" | "running" | "succeeded" | "failed";
   error?: string;
 }
-
-const READING_LEVELS = [
-  { value: "early_reader", label: "Early Reader (K-2)" },
-  { value: "developing_reader", label: "Developing Reader (3-5)" },
-  { value: "intermediate_reader", label: "Intermediate Reader (6-8)" },
-  { value: "advanced_reader", label: "Advanced Reader (9+)" },
-];
-
-const VOICE_PRESETS = [
-  { value: "calm_childlike_female", label: "Calm Childlike Female" },
-  { value: "gentle_male", label: "Gentle Male" },
-  { value: "warm_female", label: "Warm Female" },
-  { value: "friendly_neutral", label: "Friendly Neutral" },
-];
-
+const READING_LEVELS = [{
+  value: "early_reader",
+  label: "Early Reader (K-2)"
+}, {
+  value: "developing_reader",
+  label: "Developing Reader (3-5)"
+}, {
+  value: "intermediate_reader",
+  label: "Intermediate Reader (6-8)"
+}, {
+  value: "advanced_reader",
+  label: "Advanced Reader (9+)"
+}];
 export default function SocialStoryForm() {
   const [formData, setFormData] = useState<SocialStoryData>({
     situation: "",
-    setting: "",
+    setting: ""
   });
-  const [wordsToAvoidInput, setWordsToAvoidInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [estimatedTime, setEstimatedTime] = useState<number>(0);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
-
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.example.com";
   const handleInputChange = (field: keyof SocialStoryData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
-
-  const handleWordsToAvoidChange = (value: string) => {
-    setWordsToAvoidInput(value);
-    const words = value.split(",").map(word => word.trim()).filter(word => word);
-    handleInputChange("words_to_avoid", words.length > 0 ? words : undefined);
-  };
-
   const pollJobStatus = async (jobId: string) => {
     try {
       const response = await fetch(`${API_BASE_URL}/v1/jobs/${jobId}`);
       const data = await response.json();
       setJobStatus(data);
-
       if (data.status === "succeeded") {
         toast({
           title: "Video Ready!",
-          description: "Your social story video is ready for download.",
+          description: "Your social story video is ready for download."
         });
         return true;
       } else if (data.status === "failed") {
@@ -96,18 +82,16 @@ export default function SocialStoryForm() {
       return true;
     }
   };
-
   const startPolling = async (jobId: string) => {
     let attempts = 0;
     const maxAttempts = 150; // 5 minutes with 2-second intervals
     const startTime = Date.now();
     setEstimatedTime(120); // 2 minutes estimated
-    
+
     // Timer to update elapsed time
     const timer = setInterval(() => {
       setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
     }, 1000);
-
     while (attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 2000));
       const isComplete = await pollJobStatus(jobId);
@@ -117,7 +101,6 @@ export default function SocialStoryForm() {
       }
       attempts++;
     }
-
     if (attempts >= maxAttempts) {
       clearInterval(timer);
       toast({
@@ -128,10 +111,8 @@ export default function SocialStoryForm() {
       setIsGenerating(false);
     }
   };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!formData.situation.trim() || !formData.setting.trim()) {
       toast({
         title: "Missing Information",
@@ -140,36 +121,37 @@ export default function SocialStoryForm() {
       });
       return;
     }
-
     setIsGenerating(true);
     setJobStatus(null);
     setDownloadUrl(null);
     setElapsedTime(0);
     setEstimatedTime(0);
-
     try {
       const payload = {
         ...formData,
-        age: formData.age || undefined,
+        age: formData.age || undefined
       };
-
       const response = await fetch(`${API_BASE_URL}/v1/social-story:start`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
       });
-
       if (!response.ok) {
         throw new Error("Failed to start video generation");
       }
-
-      const { job_id } = await response.json();
+      const {
+        job_id
+      } = await response.json();
       toast({
         title: "Generation Started",
-        description: "Your social story video is being created. This usually takes 2-3 minutes.",
+        description: "Your social story video is being created. This usually takes 2-3 minutes."
       });
-      
-      setJobStatus({ job_id, status: "queued" });
+      setJobStatus({
+        job_id,
+        status: "queued"
+      });
       await startPolling(job_id);
     } catch (error) {
       console.error("Error starting job:", error);
@@ -181,29 +163,27 @@ export default function SocialStoryForm() {
       setIsGenerating(false);
     }
   };
-
   const handleDownload = async () => {
     if (!jobStatus?.job_id) return;
-
     try {
       const response = await fetch(`${API_BASE_URL}/v1/jobs/${jobStatus.job_id}/download`);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
-      
       const a = document.createElement("a");
       a.href = url;
       a.download = `social-story-${jobStatus.job_id}.mp4`;
       a.click();
-      
       URL.revokeObjectURL(url);
       toast({
         title: "Download Complete",
-        description: "Your social story video has been downloaded successfully!",
+        description: "Your social story video has been downloaded successfully!"
       });
-      
+
       // Reset form after successful download
-      setFormData({ situation: "", setting: "" });
-      setWordsToAvoidInput("");
+      setFormData({
+        situation: "",
+        setting: ""
+      });
       setJobStatus(null);
       setIsGenerating(false);
     } catch (error) {
@@ -215,23 +195,19 @@ export default function SocialStoryForm() {
       });
     }
   };
-
   const handleRetry = () => {
     setJobStatus(null);
     setIsGenerating(false);
     setElapsedTime(0);
     setEstimatedTime(0);
   };
-
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
-
   const getStatusIcon = () => {
     if (!jobStatus) return null;
-    
     switch (jobStatus.status) {
       case "queued":
         return <Timer className="w-5 h-5 text-primary animate-pulse" />;
@@ -245,14 +221,11 @@ export default function SocialStoryForm() {
         return null;
     }
   };
-
   const getStatusContent = () => {
     if (!jobStatus) return null;
-    
     switch (jobStatus.status) {
       case "queued":
-        return (
-          <div className="space-y-4">
+        return <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Timer className="w-5 h-5 text-primary animate-pulse" />
@@ -274,12 +247,9 @@ export default function SocialStoryForm() {
             <p className="text-xs text-muted-foreground">
               Please keep this page open while your video is being created.
             </p>
-          </div>
-        );
-        
+          </div>;
       case "running":
-        return (
-          <div className="space-y-4">
+        return <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <RefreshCw className="w-5 h-5 text-primary animate-spin" />
@@ -301,12 +271,9 @@ export default function SocialStoryForm() {
             <p className="text-xs text-muted-foreground">
               Please keep this page open while your video is being created.
             </p>
-          </div>
-        );
-        
+          </div>;
       case "succeeded":
-        return (
-          <div className="space-y-4">
+        return <div className="space-y-4">
             <div className="flex items-center gap-3">
               <CheckCircle className="w-6 h-6 text-green-600" />
               <div>
@@ -332,12 +299,9 @@ export default function SocialStoryForm() {
               <Download className="w-4 h-4 mr-2" />
               Download Your Social Story Video
             </Button>
-          </div>
-        );
-        
+          </div>;
       case "failed":
-        return (
-          <div className="space-y-4">
+        return <div className="space-y-4">
             <div className="flex items-center gap-3">
               <AlertCircle className="w-6 h-6 text-red-600" />
               <div>
@@ -362,173 +326,143 @@ export default function SocialStoryForm() {
               <RefreshCw className="w-4 h-4 mr-2" />
               Try Again
             </Button>
-          </div>
-        );
-        
+          </div>;
       default:
         return null;
     }
   };
-
-  return (
-    <div className="max-w-2xl mx-auto space-y-8">
-      <div className="text-center space-y-4">
-        <div className="flex items-center justify-center gap-2 mb-4">
-          <BookOpen className="w-8 h-8 text-primary" />
-          <h1 className="text-3xl font-bold bg-gradient-hero bg-clip-text text-transparent">
+  return <div className="max-w-4xl mx-auto space-y-12 px-4">
+      {/* Header - visible on desktop, hidden on mobile */}
+      <div className="text-center space-y-6 hidden lg:block">
+        <div className="flex items-center justify-center gap-3 mb-6">
+          <BookOpen className="w-10 h-10 text-primary" />
+          <h1 className="text-4xl font-bold bg-gradient-hero bg-clip-text text-transparent">
             Social Story Creator
           </h1>
         </div>
-        <p className="text-muted-foreground text-lg">
-          Create personalized video social stories for your students
-        </p>
+        <div className="max-w-2xl mx-auto space-y-4">
+          <p className="text-muted-foreground text-xl">
+            Brings social stories to life for more engaging lessons with students
+          </p>
+          <div className="bg-muted/30 rounded-lg p-4 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 justify-center">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <span>We do not store any information to protect student privacy</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Card className="shadow-card">
-        <CardHeader className="space-y-1">
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" />
+        <CardHeader className="space-y-2">
+          {/* Mobile header - only visible on mobile */}
+          <div className="lg:hidden text-center space-y-4 mb-6">
+            <div className="flex items-center justify-center gap-3">
+              <BookOpen className="w-8 h-8 text-primary" />
+              <h1 className="text-3xl font-bold bg-gradient-hero bg-clip-text text-transparent">
+                Social Story Creator
+              </h1>
+            </div>
+            <p className="text-muted-foreground">
+              Brings social stories to life for more engaging lessons with students
+            </p>
+            <div className="bg-muted/30 rounded-lg p-3 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 justify-center">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span>We do not store any information to protect student privacy</span>
+              </div>
+            </div>
+          </div>
+          
+          <CardTitle className="flex items-center gap-2 text-2xl">
+            <Sparkles className="w-6 h-6 text-primary" />
             Story Details
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-base">
             Provide the context and setting for your social story
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="situation" className="flex items-center gap-1">
-                  Situation <Badge variant="secondary" className="text-xs">Required</Badge>
-                </Label>
-                <Textarea
-                  id="situation"
-                  placeholder="e.g., passing gas in class and laughing to get attention"
-                  value={formData.situation}
-                  onChange={(e) => handleInputChange("situation", e.target.value)}
-                  className="min-h-[100px] resize-none"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="setting" className="flex items-center gap-1">
-                  Setting <Badge variant="secondary" className="text-xs">Required</Badge>
-                </Label>
-                <Textarea
-                  id="setting"
-                  placeholder="e.g., elementary classroom"
-                  value={formData.setting}
-                  onChange={(e) => handleInputChange("setting", e.target.value)}
-                  className="min-h-[100px] resize-none"
-                  required
-                />
-              </div>
+        <CardContent className="space-y-8">
+          <form onSubmit={handleSubmit} className="space-y-8">
+            {/* Situation - Full Width */}
+            <div className="space-y-3">
+              <Label htmlFor="situation" className="flex items-center gap-2 text-base font-medium">
+                Situation <Badge variant="secondary" className="text-xs">Required</Badge>
+              </Label>
+              <p className="text-sm text-muted-foreground">Describe the specific behavior or situation you want to address</p>
+              <Textarea id="situation" placeholder="Describe situation" value={formData.situation} onChange={e => handleInputChange("situation", e.target.value)} className="min-h-[120px] resize-none text-base" required />
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="age">Student Age</Label>
-                <Select value={formData.age?.toString() || ""} onValueChange={(value) => handleInputChange("age", value ? parseInt(value) : undefined)}>
-                  <SelectTrigger>
+            {/* Setting - Full Width */}
+            <div className="space-y-3">
+              <Label htmlFor="setting" className="flex items-center gap-2 text-base font-medium">
+                Setting <Badge variant="secondary" className="text-xs">Required</Badge>
+              </Label>
+              <p className="text-sm text-muted-foreground">Describe where this typically happens</p>
+              <Textarea id="setting" placeholder="Describe setting" value={formData.setting} onChange={e => handleInputChange("setting", e.target.value)} className="min-h-[120px] resize-none text-base" required />
+            </div>
+
+            {/* Age and Reading Level - Side by Side */}
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="space-y-3">
+                <Label htmlFor="age" className="text-base font-medium">Student Age</Label>
+                <Select value={formData.age?.toString() || ""} onValueChange={value => handleInputChange("age", value ? parseInt(value) : undefined)}>
+                  <SelectTrigger className="h-12 text-base">
                     <SelectValue placeholder="Select age" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Array.from({ length: 23 }, (_, i) => (
-                      <SelectItem key={i} value={i.toString()}>
-                        {i}
-                      </SelectItem>
-                    ))}
+                    {Array.from({
+                    length: 23
+                  }, (_, i) => <SelectItem key={i} value={i.toString()}>
+                        {i} years old
+                      </SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="reading_level">Reading Level</Label>
-                <Select value={formData.reading_level || ""} onValueChange={(value) => handleInputChange("reading_level", value || undefined)}>
-                  <SelectTrigger>
+              <div className="space-y-3">
+                <Label htmlFor="reading_level" className="text-base font-medium">Reading Level</Label>
+                <Select value={formData.reading_level || ""} onValueChange={value => handleInputChange("reading_level", value || undefined)}>
+                  <SelectTrigger className="h-12 text-base">
                     <SelectValue placeholder="Select reading level" />
                   </SelectTrigger>
                   <SelectContent>
-                    {READING_LEVELS.map((level) => (
-                      <SelectItem key={level.value} value={level.value}>
+                    {READING_LEVELS.map(level => <SelectItem key={level.value} value={level.value}>
                         {level.label}
-                      </SelectItem>
-                    ))}
+                      </SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="diagnosis">Diagnosis Summary</Label>
-              <Input
-                id="diagnosis"
-                placeholder="e.g., autism; prefers routine"
-                value={formData.diagnosis_summary || ""}
-                onChange={(e) => handleInputChange("diagnosis_summary", e.target.value || undefined)}
-              />
+            {/* Diagnosis Notes - Full Width */}
+            <div className="space-y-3">
+              <Label htmlFor="diagnosis" className="text-base font-medium">Diagnosis Notes</Label>
+              <p className="text-sm text-muted-foreground">Any relevant diagnosis information or behavioral notes</p>
+              <Textarea id="diagnosis" placeholder="Add notes" value={formData.diagnosis_summary || ""} onChange={e => handleInputChange("diagnosis_summary", e.target.value || undefined)} className="min-h-[100px] resize-none text-base" />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="words_to_avoid">Words to Avoid</Label>
-              <Input
-                id="words_to_avoid"
-                placeholder="e.g., gross, bad (separate with commas)"
-                value={wordsToAvoidInput}
-                onChange={(e) => handleWordsToAvoidChange(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="voice_preset">Voice Style</Label>
-              <Select value={formData.voice_preset || ""} onValueChange={(value) => handleInputChange("voice_preset", value || undefined)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select voice style" />
-                </SelectTrigger>
-                <SelectContent>
-                  {VOICE_PRESETS.map((voice) => (
-                    <SelectItem key={voice.value} value={voice.value}>
-                      {voice.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {jobStatus && (
-              <Card className={`border-2 ${
-                jobStatus.status === 'succeeded' ? 'border-green-200 bg-green-50' :
-                jobStatus.status === 'failed' ? 'border-red-200 bg-red-50' :
-                'border-primary/20 bg-primary/5'
-              }`}>
+            {jobStatus && <Card className={`border-2 ${jobStatus.status === 'succeeded' ? 'border-green-200 bg-green-50' : jobStatus.status === 'failed' ? 'border-red-200 bg-red-50' : 'border-primary/20 bg-primary/5'}`}>
                 <CardContent className="pt-6">
                   {getStatusContent()}
                 </CardContent>
-              </Card>
-            )}
+              </Card>}
 
-            <Button 
-              type="submit" 
-              disabled={isGenerating || !formData.situation.trim() || !formData.setting.trim()}
-              className="w-full bg-gradient-hero hover:shadow-glow transition-all duration-300"
-              size="lg"
-            >
-              {isGenerating ? (
-                <>
+            <Button type="submit" disabled={isGenerating || !formData.situation.trim() || !formData.setting.trim()} className="w-full bg-gradient-hero hover:shadow-glow transition-all duration-300 text-lg py-6" size="lg">
+              {isGenerating ? <>
                   <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                   Creating Video...
-                </>
-              ) : (
-                <>
+                </> : <>
                   <FileVideo className="w-4 h-4 mr-2" />
                   Generate Social Story
-                </>
-              )}
+                </>}
             </Button>
           </form>
         </CardContent>
       </Card>
-    </div>
-  );
+    </div>;
 }
