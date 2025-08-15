@@ -1,0 +1,8 @@
+[project]
+name = "social-story"
+version = "0.1.0"
+description = "Social Story Backend MVP (FastAPI + LangGraph + OpenAI + Replicate + ElevenLabs + FFmpeg)"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
