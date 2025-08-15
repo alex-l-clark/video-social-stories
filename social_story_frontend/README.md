@@ -62,7 +62,18 @@ This project is built with:
 
 ## How can I deploy this project?
 
-Simply open [Lovable](https://lovable.dev/projects/88a34706-7820-4ea8-a0f2-5b34fb60ab36) and click on Share -> Publish.
+For Vercel, set the following Environment Variable before deploying:
+
+```bash
+VITE_API_BASE_URL=https://your-backend.example.com
+```
+
+In local development, you can use:
+
+```bash
+cp env.example .env
+# VITE_API_BASE_URL=http://localhost:8000
+```
 
 ## Can I connect a custom domain to my Lovable project?
 
