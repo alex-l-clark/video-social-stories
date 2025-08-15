@@ -1,2 +1,2 @@
 # video-social-stories
-Social Story Generator for Autistic Students
+Social Story Generator for Autistic Students MVP
