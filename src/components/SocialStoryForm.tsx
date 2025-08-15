@@ -230,7 +230,7 @@ export default function SocialStoryForm() {
             <div className="grid gap-6 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="situation" className="flex items-center gap-1">
-                  Situation <Badge variant="destructive" className="text-xs">Required</Badge>
+                  Situation <Badge variant="secondary" className="text-xs">Required</Badge>
                 </Label>
                 <Textarea
                   id="situation"
@@ -244,7 +244,7 @@ export default function SocialStoryForm() {
 
               <div className="space-y-2">
                 <Label htmlFor="setting" className="flex items-center gap-1">
-                  Setting <Badge variant="destructive" className="text-xs">Required</Badge>
+                  Setting <Badge variant="secondary" className="text-xs">Required</Badge>
                 </Label>
                 <Textarea
                   id="setting"
