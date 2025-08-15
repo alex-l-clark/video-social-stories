@@ -49,7 +49,7 @@ export default function SocialStoryForm() {
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "https://api.example.com";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.example.com";
 
   const handleInputChange = (field: keyof SocialStoryData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
