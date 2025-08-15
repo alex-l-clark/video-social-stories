@@ -260,15 +260,18 @@ export default function SocialStoryForm() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="age">Student Age</Label>
-                <Input
-                  id="age"
-                  type="number"
-                  placeholder="6"
-                  value={formData.age || ""}
-                  onChange={(e) => handleInputChange("age", e.target.value ? parseInt(e.target.value) : undefined)}
-                  min="3"
-                  max="18"
-                />
+                <Select value={formData.age?.toString() || ""} onValueChange={(value) => handleInputChange("age", value ? parseInt(value) : undefined)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select age" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 23 }, (_, i) => (
+                      <SelectItem key={i} value={i.toString()}>
+                        {i}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
