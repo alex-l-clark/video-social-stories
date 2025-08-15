@@ -16,8 +16,9 @@ FastAPI + LangGraph backend to generate social story videos:
 
 2) **Create env**:
    ```bash
-   cp .env.example .env
+   cp env.example .env
    # fill in OPENAI_API_KEY, REPLICATE_API_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
+   # optionally set ALLOWED_ORIGINS (e.g., http://localhost:5173 for local, your Vercel URL for prod)
    ```
 
 3) **Install Python deps**:
