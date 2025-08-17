@@ -18,6 +18,7 @@ FastAPI + LangGraph backend to generate social story videos:
    ```bash
    cp .env.example .env
    # fill in OPENAI_API_KEY, REPLICATE_API_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
+   # optional but recommended for stability: REPLICATE_MODEL_VERSION
    ```
 
 3) **Install Python deps**:
@@ -49,4 +50,5 @@ FastAPI + LangGraph backend to generate social story videos:
 - English + first-person is assumed.
 - No login; no persistence of PII or files on server after download.
 - To change image model, set `MODEL` in `social_story/replicate_client.py` to a specific version ID you trust.
+- You can also set `REPLICATE_MODEL_VERSION` in `.env` (preferred) to a known-good version hash or alias like `owner/model:version`.
 - For stricter redaction, enhance `_redact()` in `social_story/llm.py`.

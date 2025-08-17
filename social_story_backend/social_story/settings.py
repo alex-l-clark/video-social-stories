@@ -5,6 +5,7 @@ load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "")
+REPLICATE_MODEL_VERSION = os.getenv("REPLICATE_MODEL_VERSION", "")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")
 
@@ -16,7 +17,8 @@ VIDEO_HEIGHT = int(os.getenv("VIDEO_HEIGHT", "720"))
 FPS = int(os.getenv("FPS", "30"))
 
 # Comma-separated list of allowed origins for CORS (e.g., "https://app.vercel.app,https://www.example.com")
-ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+# For local development, we'll allow localhost on common ports
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()]
 
 def has_all_keys() -> bool:
     return all([OPENAI_API_KEY, REPLICATE_API_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID])

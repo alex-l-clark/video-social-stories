@@ -38,6 +38,12 @@ def ffmpeg_burn_subs(in_path: str, srt_path: str, out_path: str):
     _run(cmd)
 
 def _run(cmd: str):
+    print(f"Running FFmpeg command: {cmd}")
     proc = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.decode("utf-8", errors="ignore"))
+        error_msg = proc.stderr.decode("utf-8", errors="ignore")
+        print(f"FFmpeg command failed with return code {proc.returncode}")
+        print(f"Error output: {error_msg}")
+        raise RuntimeError(f"FFmpeg failed: {error_msg}")
+    else:
+        print("FFmpeg command completed successfully")

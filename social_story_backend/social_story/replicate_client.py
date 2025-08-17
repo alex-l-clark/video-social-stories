@@ -1,28 +1,56 @@
-import time, httpx, asyncio
-from .settings import REPLICATE_API_TOKEN, REPLICATE_POLL_INTERVAL_MS, REPLICATE_POLL_TIMEOUT_S
+import os, time, httpx, asyncio
+from .settings import REPLICATE_POLL_INTERVAL_MS, REPLICATE_POLL_TIMEOUT_S, REPLICATE_MODEL_VERSION
 
-HEADERS = {"Authorization": f"Token {REPLICATE_API_TOKEN}"}
+def _headers():
+    token = os.getenv("REPLICATE_API_TOKEN", "")
+    if not token:
+        raise RuntimeError("REPLICATE_API_TOKEN is not set; please configure your .env")
+    return {"Authorization": f"Token {token}"}
 
-# Replace with a concrete version slug if needed for stability.
-MODEL = "stability-ai/sdxl"
+def _model_selector() -> str:
+    # Prefer explicit version from env for stability; fall back to a public model alias (latest).
+    return REPLICATE_MODEL_VERSION or "black-forest-labs/flux-schnell"
+
+def _parse_selector(selector: str):
+    # Returns a tuple (mode, data)
+    # mode == "version": data={"version": <hash>}
+    # mode == "model": data={"owner": <owner>, "name": <name>}
+    if "/" in selector:
+        # Could be owner/name or owner/name:versionAlias
+        owner_name, _, _version_alias = selector.partition(":")
+        if "/" in owner_name:
+            owner, name = owner_name.split("/", 1)
+            return "model", {"owner": owner, "name": name}
+    # Fallback assume it's a version hash
+    return "version", {"version": selector}
 
 async def _asleep(sec: float):
     await asyncio.sleep(sec)
 
 async def create_and_wait_image(prompt: str) -> str:
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(
-            "https://api.replicate.com/v1/predictions",
-            headers={**HEADERS, "Content-Type": "application/json"},
-            json={
-                "version": MODEL,
-                "input": {
-                    "prompt": f"{prompt}, flat, classroom-friendly illustration, simple shapes, soft colors, clean background, no text on walls",
-                    "num_outputs": 1
-                }
+        selector = _model_selector()
+        json_body = {
+            "input": {
+                "prompt": f"{prompt}, flat, classroom-friendly illustration, simple shapes, soft colors, clean background, no text on walls",
+                "num_outputs": 1
             }
+        }
+        mode, data = _parse_selector(selector)
+        if mode == "version":
+            json_body["version"] = data["version"]
+            url = "https://api.replicate.com/v1/predictions"
+        else:
+            url = f"https://api.replicate.com/v1/models/{data['owner']}/{data['name']}/predictions"
+
+        r = await client.post(
+            url,
+            headers={**_headers(), "Content-Type": "application/json"},
+            json=json_body,
         )
-        r.raise_for_status()
+        if r.status_code >= 400:
+            # Surface useful error context
+            raise RuntimeError(f"Replicate create failed {r.status_code}: {r.text}")
         pred = r.json()
         pred_id = pred["id"]
 
@@ -30,14 +58,17 @@ async def create_and_wait_image(prompt: str) -> str:
         while True:
             s = await client.get(
                 f"https://api.replicate.com/v1/predictions/{pred_id}",
-                headers=HEADERS
+                headers=_headers()
             )
-            s.raise_for_status()
+            if s.status_code >= 400:
+                raise RuntimeError(f"Replicate status failed {s.status_code}: {s.text}")
             body = s.json()
             status = body.get("status")
             if status in ("succeeded", "failed", "canceled"):
                 if status != "succeeded":
-                    raise RuntimeError(f"Replicate failed: {status}")
+                    logs = body.get("logs")
+                    error_detail = body.get("error")
+                    raise RuntimeError(f"Replicate failed: {status}. logs={logs} error={error_detail}")
                 output = body.get("output")
                 if isinstance(output, list) and output:
                     return output[0]

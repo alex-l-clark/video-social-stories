@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+
+# MacOS
+.DS_Store
+
+# Logs
+*.log
+uvicorn.log
+
+# Environment files
+.env
+.env.*
+*/.env
+**/.env
+
+# Node / builds (if applicable)
+node_modules/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE/editor
+.vscode/
+.idea/
+
+

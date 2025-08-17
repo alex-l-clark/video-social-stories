@@ -1,8 +1,17 @@
-import json
-from openai import OpenAI
+import os, json
 from .prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE, STORY_SCHEMA
 
-_client = OpenAI()
+_client = None
+
+def _get_client():
+    global _client
+    if _client is None:
+        from openai import OpenAI
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is not set; please configure your .env")
+        _client = OpenAI(api_key=api_key)
+    return _client
 
 def _redact(text: str) -> str:
     # MVP: no-op; expand to replace names with "the student" if needed.
@@ -24,7 +33,8 @@ def get_story_spec(req) -> dict:
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": build_user_prompt(req)},
     ]
-    resp = _client.chat.completions.create(
+    client = _get_client()
+    resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
         temperature=0.4,

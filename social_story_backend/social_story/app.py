@@ -3,9 +3,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+# Ensure .env is loaded before importing modules that initialize API clients
+from .settings import has_all_keys, ALLOWED_ORIGINS
 from .models import StoryRequest
 from .orchestrator import run_pipeline
-from .settings import has_all_keys, ALLOWED_ORIGINS
 from typing import Optional
 import asyncio
 from .utils import safe_open_binary
@@ -15,6 +16,7 @@ app = FastAPI(title="Social Story Backend (MVP)")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS or ["*"],
+    allow_credentials=True,
     allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["*"],
 )
@@ -29,7 +31,12 @@ async def render_story(req: StoryRequest):
     if not req.situation or not req.setting:
         raise HTTPException(400, "situation and setting are required")
     final_state = await run_pipeline(req)
-    if not final_state.final_path or not os.path.exists(final_state.final_path):
+    # Handle LangGraph's AddableValuesDict result
+    final_path = final_state.get("final_path") if hasattr(final_state, 'get') else final_state.final_path
+    tmp_dir = final_state.get("tmp_dir") if hasattr(final_state, 'get') else final_state.tmp_dir
+    job_id = final_state.get("job_id") if hasattr(final_state, 'get') else final_state.job_id
+    
+    if not final_path or not os.path.exists(final_path):
         raise HTTPException(500, "Failed to render video")
     def iterfile(path, tmp_dir):
         try:
@@ -38,10 +45,10 @@ async def render_story(req: StoryRequest):
                     yield chunk
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
-    filename = f"social-story-{final_state.job_id}.mp4"
+    filename = f"social-story-{job_id}.mp4"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(
-        iterfile(final_state.final_path, final_state.tmp_dir),
+        iterfile(final_path, tmp_dir),
         media_type="video/mp4",
         headers=headers
     )
@@ -61,8 +68,9 @@ async def _background_render(job: JobRecord, req: StoryRequest):
     try:
         job.status = "running"
         final_state = await run_pipeline(req)
-        job.tmp_dir = final_state.tmp_dir
-        job.final_path = final_state.final_path
+        # Handle LangGraph's AddableValuesDict result
+        job.tmp_dir = final_state.get("tmp_dir") if hasattr(final_state, 'get') else final_state.tmp_dir
+        job.final_path = final_state.get("final_path") if hasattr(final_state, 'get') else final_state.final_path
         job.status = "succeeded"
     except Exception as e:
         job.error = str(e)
