@@ -1,13 +1,17 @@
 import os, shutil
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import logging
+import uuid
+import tempfile
 
 # Ensure .env is loaded before importing modules that initialize API clients
 from .settings import has_all_keys, ALLOWED_ORIGINS
-from .models import StoryRequest
+from .models import StoryRequest, StorySpec
 from .orchestrator import run_pipeline
+from .kv_storage import kv
+from .llm import get_story_spec
 from typing import Optional
 import asyncio
 from .utils import safe_open_binary
@@ -60,13 +64,39 @@ async def render_story(req: StoryRequest):
         headers=headers
     )
 
-# --- Simple in-memory job registry for async workflow ---
+# --- KV-based job registry for scalable async workflow ---
+async def create_job_record(job_id: str, request: StoryRequest) -> dict:
+    """Create a new job record in KV storage"""
+    job_data = {
+        "job_id": job_id,
+        "status": "queued",
+        "error": None,
+        "request": request.model_dump(),
+        "created_at": str(asyncio.get_event_loop().time()),
+        "spec": None,
+        "scenes_completed": 0,
+        "total_scenes": 0,
+        "final_path": None
+    }
+    await kv.set_job(job_id, job_data)
+    return job_data
+
+async def get_job_record(job_id: str) -> Optional[dict]:
+    """Get job record from KV storage or fallback to in-memory"""
+    job_data = await kv.get_job(job_id)
+    if job_data:
+        return job_data
+    
+    # Fallback to in-memory for backward compatibility
+    return JOBS.get(job_id)
+
+# Legacy in-memory storage for fallback
 JOBS = {}
 
 class JobRecord:
     def __init__(self, job_id: str):
         self.job_id = job_id
-        self.status = "queued"  # queued -> running -> succeeded/failed
+        self.status = "queued"
         self.error: Optional[str] = None
         self.tmp_dir: Optional[str] = None
         self.final_path: Optional[str] = None
@@ -102,43 +132,125 @@ async def start_job(req: StoryRequest):
     if not req.situation or not req.setting:
         raise HTTPException(400, "situation and setting are required")
     
-    # Create a placeholder state to get job_id and tmp_dir semantics
-    # We rely on run_pipeline to generate a unique job_id; for API we generate here
-    job_id = os.urandom(16).hex()
-    job = JobRecord(job_id)
-    JOBS[job_id] = job
+    # Generate job ID and create KV record
+    job_id = str(uuid.uuid4())
+    job_data = await create_job_record(job_id, req)
+    
+    # Start the async pipeline - this will process step by step using webhooks
+    asyncio.create_task(start_story_generation(job_id, req))
+    
+    return {"job_id": job_id, "status": "queued"}
 
-    # If running on Vercel serverless, background tasks will not survive
-    # after the HTTP response is returned. To avoid the "running forever"
-    # symptom, run the pipeline synchronously here as a pragmatic hotfix.
-    # Detect serverless/Vercel environment broadly
-    if (os.getenv("VERCEL") is not None) or os.getenv("VERCEL_URL") or os.getenv("NOW_REGION") or os.getenv("SERVERLESS") == "1":
-        logger.info(f"VERCEL=1 detected. Running job {job_id} synchronously in this request.")
-        try:
-            job.status = "running"
-            final_state = await run_pipeline(req)
-            job.tmp_dir = final_state.get("tmp_dir") if hasattr(final_state, 'get') else final_state.tmp_dir
-            job.final_path = final_state.get("final_path") if hasattr(final_state, 'get') else final_state.final_path
-            job.status = "succeeded"
-            logger.info(f"Synchronous run completed for job {job_id}")
-        except Exception as e:
-            job.error = str(e)
-            job.status = "failed"
-            logger.error(f"Synchronous run failed for job {job_id}: {e}")
-            if job.tmp_dir:
-                shutil.rmtree(job.tmp_dir, ignore_errors=True)
-        return {"job_id": job_id, "status": job.status, "error": job.error}
+async def start_story_generation(job_id: str, req: StoryRequest):
+    """Start the story generation pipeline with KV state management"""
+    try:
+        # Update status to running
+        await kv.update_job_status(job_id, "running")
+        
+        # Step 1: Generate story spec
+        logger.info(f"Generating story spec for job {job_id}")
+        raw_spec = get_story_spec(req)
+        spec = StorySpec.model_validate(raw_spec)
+        
+        # Store spec in KV
+        await kv.update_job_status(job_id, "running", 
+                                   spec=spec.model_dump(), 
+                                   total_scenes=len(spec.scenes),
+                                   current_step="generating_assets")
+        
+        # Step 2: Generate assets for each scene
+        logger.info(f"Starting asset generation for {len(spec.scenes)} scenes")
+        await process_all_scenes(job_id, spec)
+        
+    except Exception as e:
+        logger.error(f"Story generation failed for job {job_id}: {e}")
+        await kv.update_job_status(job_id, "failed", error=str(e))
 
-    logger.info(f"Created job {job_id}, starting background processing")
-    asyncio.create_task(_background_render(job, req))
-    return {"job_id": job_id, "status": job.status}
+async def process_all_scenes(job_id: str, spec: StorySpec):
+    """Process all scenes asynchronously"""
+    # Start all scene processing concurrently (but with delays to respect API limits)
+    tasks = []
+    for i, scene in enumerate(spec.scenes):
+        # Add small delays between requests to be respectful to APIs
+        delay = i * 2  # 2 second delay between each scene start
+        task = asyncio.create_task(process_scene_with_delay(job_id, scene, delay))
+        tasks.append(task)
+    
+    # Wait for all scenes to complete
+    await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Check if all scenes completed successfully
+    job_data = await kv.get_job(job_id)
+    if job_data and job_data.get("scenes_completed", 0) >= len(spec.scenes):
+        # All scenes done - proceed to video rendering
+        await render_final_video(job_id, spec)
+
+async def process_scene_with_delay(job_id: str, scene, delay: int):
+    """Process a single scene with initial delay"""
+    if delay > 0:
+        await asyncio.sleep(delay)
+    
+    logger.info(f"Processing scene {scene.id} for job {job_id}")
+    
+    try:
+        # This will trigger Replicate and ElevenLabs in parallel
+        # We'll use webhooks to track completion
+        await initiate_scene_assets(job_id, scene)
+    except Exception as e:
+        logger.error(f"Failed to initiate scene {scene.id} for job {job_id}: {e}")
+        await kv.update_job_status(job_id, "failed", error=str(e))
+
+async def initiate_scene_assets(job_id: str, scene):
+    """Initiate asset generation for a scene (placeholder for webhook implementation)"""
+    # For now, keep the direct API calls but we'll add webhook support next
+    from .replicate_client import create_and_wait_image
+    from .elevenlabs_client import tts_to_bytes
+    import httpx
+    
+    # Generate image
+    image_url = await create_and_wait_image(scene.image_prompt)
+    await kv.set_scene_asset(job_id, scene.id, "image", image_url)
+    
+    # Generate audio
+    audio_bytes = await tts_to_bytes(scene.script)
+    # For now, we'll need to store audio bytes differently - will implement blob storage
+    
+    # Update scene completion count
+    job_data = await kv.get_job(job_id)
+    if job_data:
+        scenes_completed = job_data.get("scenes_completed", 0) + 1
+        await kv.update_job_status(job_id, "running", scenes_completed=scenes_completed)
+
+async def render_final_video(job_id: str, spec: StorySpec):
+    """Render the final video once all assets are ready"""
+    logger.info(f"Starting final video render for job {job_id}")
+    await kv.update_job_status(job_id, "running", current_step="rendering_video")
+    
+    # This is a placeholder - we'll implement the video rendering
+    # For now, just mark as completed
+    await kv.update_job_status(job_id, "succeeded", current_step="completed")
 
 @app.get("/v1/jobs/{job_id}")
-def job_status(job_id: str):
-    job = JOBS.get(job_id)
-    if not job:
+async def job_status(job_id: str):
+    job_data = await get_job_record(job_id)
+    if not job_data:
         raise HTTPException(404, "job not found")
-    return {"job_id": job.job_id, "status": job.status, "error": job.error}
+    
+    # Handle both dict (KV) and JobRecord (legacy) formats
+    if isinstance(job_data, dict):
+        return {
+            "job_id": job_data["job_id"],
+            "status": job_data["status"],
+            "error": job_data.get("error"),
+            "progress": {
+                "current_step": job_data.get("current_step", "unknown"),
+                "scenes_completed": job_data.get("scenes_completed", 0),
+                "total_scenes": job_data.get("total_scenes", 0)
+            }
+        }
+    else:
+        # Legacy JobRecord format
+        return {"job_id": job_data.job_id, "status": job_data.status, "error": job_data.error}
 
 @app.get("/v1/jobs/{job_id}/download")
 def job_download(job_id: str):

@@ -53,13 +53,10 @@ async def _scene_asset(scene: Scene, tmp_dir: str):
 async def node_assets(state: OrchestrationState) -> OrchestrationState:
     assert state.spec
     total_scenes = len(state.spec.scenes)
-    # In serverless, keep work bounded to avoid timeouts
-    serverless = (os.getenv("VERCEL") is not None) or os.getenv("VERCEL_URL") or os.getenv("NOW_REGION") or os.getenv("SERVERLESS") == "1"
-    max_scenes = min(total_scenes, 2) if serverless else total_scenes
-    logger.info(f"Generating assets for {total_scenes} scenes (processing {max_scenes}{' due to serverless limits' if serverless else ''})")
+    logger.info(f"Generating assets for {total_scenes} scenes")
     
     # Process scenes one at a time to avoid overwhelming the APIs
-    for i, scene in enumerate(state.spec.scenes[:max_scenes]):
+    for i, scene in enumerate(state.spec.scenes):
         logger.info(f"Processing scene {i+1}/{len(state.spec.scenes)}")
         try:
             img_path, audio_path = await _scene_asset(scene, state.tmp_dir)
