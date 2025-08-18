@@ -1,5 +1,7 @@
-import os, httpx, asyncio
+import os, httpx, asyncio, logging
 import time
+
+logger = logging.getLogger(__name__)
 
 def _voice_id() -> str:
     vid = os.getenv("ELEVENLABS_VOICE_ID", "")
@@ -17,6 +19,8 @@ def _headers():
     }
 
 async def tts_to_bytes(text: str, max_retries: int = 3) -> bytes:
+    logger.info(f"Starting ElevenLabs TTS for text: {text[:50]}...")
+    
     payload = {
         "text": text,  # MVP: plain text; SSML optional depending on voice
         "model_id": "eleven_multilingual_v2",
@@ -28,24 +32,28 @@ async def tts_to_bytes(text: str, max_retries: int = 3) -> bytes:
     
     for attempt in range(max_retries + 1):
         try:
+            logger.info(f"Sending request to ElevenLabs (attempt {attempt + 1}/{max_retries + 1})")
             async with httpx.AsyncClient(timeout=60) as client:
                 r = await client.post(url, headers=_headers(), json=payload)
                 r.raise_for_status()
+                logger.info(f"ElevenLabs TTS completed successfully, got {len(r.content)} bytes")
                 return r.content
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:  # Rate limited
                 if attempt < max_retries:
                     # Exponential backoff: wait 2^attempt seconds
                     wait_time = 2 ** attempt
-                    print(f"ElevenLabs rate limited (429). Retrying in {wait_time} seconds... (attempt {attempt + 1}/{max_retries + 1})")
+                    logger.warning(f"ElevenLabs rate limited (429). Retrying in {wait_time} seconds... (attempt {attempt + 1}/{max_retries + 1})")
                     await asyncio.sleep(wait_time)
                     continue
                 else:
-                    print(f"ElevenLabs rate limit exceeded after {max_retries + 1} attempts. Please wait before trying again.")
+                    logger.error(f"ElevenLabs rate limit exceeded after {max_retries + 1} attempts. Please wait before trying again.")
                     raise
             else:
                 # Other HTTP errors, don't retry
+                logger.error(f"ElevenLabs API error {e.response.status_code}: {e.response.text}")
                 raise
         except Exception as e:
             # Other errors (network, timeout, etc), don't retry
+            logger.error(f"ElevenLabs request failed: {str(e)}")
             raise

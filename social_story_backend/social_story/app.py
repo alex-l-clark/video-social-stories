@@ -2,6 +2,7 @@ import os, shutil
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 
 # Ensure .env is loaded before importing modules that initialize API clients
 from .settings import has_all_keys, ALLOWED_ORIGINS
@@ -10,6 +11,10 @@ from .orchestrator import run_pipeline
 from typing import Optional
 import asyncio
 from .utils import safe_open_binary
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Social Story Backend (MVP)")
 
@@ -23,7 +28,9 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
-    return {"ok": True, "has_keys": has_all_keys()}
+    keys_ok = has_all_keys()
+    logger.info(f"Health check: API keys present = {keys_ok}")
+    return {"ok": True, "has_keys": keys_ok}
 
 @app.post("/v1/social-story:render")
 async def render_story(req: StoryRequest):
@@ -66,13 +73,18 @@ class JobRecord:
 
 async def _background_render(job: JobRecord, req: StoryRequest):
     try:
+        logger.info(f"Starting background render for job {job.job_id}")
         job.status = "running"
         final_state = await run_pipeline(req)
         # Handle LangGraph's AddableValuesDict result
         job.tmp_dir = final_state.get("tmp_dir") if hasattr(final_state, 'get') else final_state.tmp_dir
         job.final_path = final_state.get("final_path") if hasattr(final_state, 'get') else final_state.final_path
         job.status = "succeeded"
+        logger.info(f"Background render completed successfully for job {job.job_id}")
     except Exception as e:
+        logger.error(f"Background render failed for job {job.job_id}: {str(e)}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         job.error = str(e)
         job.status = "failed"
         if job.tmp_dir:
@@ -80,13 +92,24 @@ async def _background_render(job: JobRecord, req: StoryRequest):
 
 @app.post("/v1/social-story:start")
 async def start_job(req: StoryRequest):
+    logger.info(f"Starting job for situation: {req.situation[:50]}...")
+    
+    # Validate API keys are present
+    if not has_all_keys():
+        logger.error("API keys missing, cannot start job")
+        raise HTTPException(500, "Server configuration error: missing required API keys")
+    
     if not req.situation or not req.setting:
         raise HTTPException(400, "situation and setting are required")
+    
     # Create a placeholder state to get job_id and tmp_dir semantics
     # We rely on run_pipeline to generate a unique job_id; for API we generate here
     job_id = os.urandom(16).hex()
     job = JobRecord(job_id)
     JOBS[job_id] = job
+    
+    logger.info(f"Created job {job_id}, starting background processing")
+    
     # Run in background
     asyncio.create_task(_background_render(job, req))
     return {"job_id": job_id, "status": job.status}
