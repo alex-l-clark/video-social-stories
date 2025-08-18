@@ -111,7 +111,8 @@ async def start_job(req: StoryRequest):
     # If running on Vercel serverless, background tasks will not survive
     # after the HTTP response is returned. To avoid the "running forever"
     # symptom, run the pipeline synchronously here as a pragmatic hotfix.
-    if os.getenv("VERCEL") == "1":
+    # Detect serverless/Vercel environment broadly
+    if (os.getenv("VERCEL") is not None) or os.getenv("VERCEL_URL") or os.getenv("NOW_REGION") or os.getenv("SERVERLESS") == "1":
         logger.info(f"VERCEL=1 detected. Running job {job_id} synchronously in this request.")
         try:
             job.status = "running"
