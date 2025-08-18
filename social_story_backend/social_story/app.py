@@ -107,10 +107,28 @@ async def start_job(req: StoryRequest):
     job_id = os.urandom(16).hex()
     job = JobRecord(job_id)
     JOBS[job_id] = job
-    
+
+    # If running on Vercel serverless, background tasks will not survive
+    # after the HTTP response is returned. To avoid the "running forever"
+    # symptom, run the pipeline synchronously here as a pragmatic hotfix.
+    if os.getenv("VERCEL") == "1":
+        logger.info(f"VERCEL=1 detected. Running job {job_id} synchronously in this request.")
+        try:
+            job.status = "running"
+            final_state = await run_pipeline(req)
+            job.tmp_dir = final_state.get("tmp_dir") if hasattr(final_state, 'get') else final_state.tmp_dir
+            job.final_path = final_state.get("final_path") if hasattr(final_state, 'get') else final_state.final_path
+            job.status = "succeeded"
+            logger.info(f"Synchronous run completed for job {job_id}")
+        except Exception as e:
+            job.error = str(e)
+            job.status = "failed"
+            logger.error(f"Synchronous run failed for job {job_id}: {e}")
+            if job.tmp_dir:
+                shutil.rmtree(job.tmp_dir, ignore_errors=True)
+        return {"job_id": job_id, "status": job.status, "error": job.error}
+
     logger.info(f"Created job {job_id}, starting background processing")
-    
-    # Run in background
     asyncio.create_task(_background_render(job, req))
     return {"job_id": job_id, "status": job.status}
 
