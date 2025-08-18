@@ -12,7 +12,7 @@ def patch_frontend_for_production():
     """Patch the frontend to use production API endpoints"""
     
     # Production backend URL
-    PRODUCTION_API_URL = "https://social-story-backend-kgt8yz10s-alexs-projects-43af42f1.vercel.app"
+    PRODUCTION_API_URL = "https://social-story-backend.vercel.app"
     
     # Backup original files
     dist_dir = "dist"
