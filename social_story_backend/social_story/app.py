@@ -32,7 +32,7 @@ app.add_middleware(
 def health():
     keys_ok = has_all_keys()
     logger.info(f"Health check: API keys present = {keys_ok}")
-    return {"ok": True, "has_keys": keys_ok}
+    return {"ok": True, "has_keys": keys_ok, "version": "synchronous-fix-v1"}
 
 @app.post("/v1/social-story:render")
 async def render_story(req: StoryRequest):
