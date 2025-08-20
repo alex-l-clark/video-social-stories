@@ -21,7 +21,8 @@ def ffmpeg_scene_clip(img_path: str, audio_path: str, out_path: str, duration: i
     cmd = (
         f'ffmpeg -y -loop 1 -i {shlex.quote(img_path)} -i {shlex.quote(audio_path)} '
         f'-filter_complex "[0:v]zoompan=z=\'min(zoom+0.0008,1.08)\':d={d_frames}:s={w}x{h},format=yuv420p[v]" '
-        f'-map "[v]" -map 1:a -c:v libx264 -pix_fmt yuv420p -r {fps} -t {duration} -c:a aac -shortest {shlex.quote(out_path)}'
+        f'-map "[v]" -map 1:a -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -r {fps} -t {duration} '
+        f'-c:a aac -b:a 128k -ac 2 -shortest -threads 2 -bufsize 1M -max_muxing_queue_size 1024 {shlex.quote(out_path)}'
     )
     _run(cmd)
 
@@ -34,7 +35,9 @@ def ffmpeg_concat(scene_files: List[str], out_tmp_path: str):
     _run(cmd)
 
 def ffmpeg_burn_subs(in_path: str, srt_path: str, out_path: str):
-    cmd = f"ffmpeg -y -i {shlex.quote(in_path)} -vf subtitles={shlex.quote(srt_path)} -c:a copy {shlex.quote(out_path)}"
+    cmd = (f"ffmpeg -y -i {shlex.quote(in_path)} -vf subtitles={shlex.quote(srt_path)} "
+           f"-c:v libx264 -preset fast -crf 23 -c:a copy -threads 2 -bufsize 1M "
+           f"-max_muxing_queue_size 1024 {shlex.quote(out_path)}")
     _run(cmd)
 
 def _run(cmd: str):

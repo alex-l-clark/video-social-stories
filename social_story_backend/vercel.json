@@ -11,5 +11,10 @@
       "src": "/(.*)",
       "dest": "social_story/app.py"
     }
-  ]
+  ],
+  "functions": {
+    "social_story/app.py": {
+      "maxDuration": 300
+    }
+  }
 }

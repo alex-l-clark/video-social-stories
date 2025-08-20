@@ -5,6 +5,7 @@ from .llm import get_story_spec
 from .replicate_client import create_and_wait_image
 from .elevenlabs_client import tts_to_bytes
 from .media import write_bytes, write_text, build_srt_from_spec, ffmpeg_scene_clip, ffmpeg_concat, ffmpeg_burn_subs
+from .settings import RENDER_WORKER_URL
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,39 @@ async def _scene_asset(scene: Scene, tmp_dir: str):
         img = await client.get(url)
         img.raise_for_status()
         img_path = os.path.join(tmp_dir, f"scene_{scene.id}.png")
-        write_bytes(img_path, img.content)
+        
+        # Convert WebP to PNG if needed using Pillow
+        try:
+            from PIL import Image
+            import io
+            
+            # Check if the image is WebP and convert to PNG
+            image_data = img.content
+            with Image.open(io.BytesIO(image_data)) as pil_img:
+                if pil_img.format == 'WEBP':
+                    logger.info(f"Converting WebP to PNG for scene {scene.id}")
+                    # Convert RGBA to RGB if necessary to avoid transparency issues with ffmpeg
+                    if pil_img.mode in ('RGBA', 'LA'):
+                        # Create white background
+                        background = Image.new('RGB', pil_img.size, (255, 255, 255))
+                        if pil_img.mode == 'LA':
+                            pil_img = pil_img.convert('RGBA')
+                        background.paste(pil_img, mask=pil_img.split()[-1])  # Use alpha channel as mask
+                        pil_img = background
+                    elif pil_img.mode != 'RGB':
+                        pil_img = pil_img.convert('RGB')
+                    
+                    # Save as PNG
+                    png_buffer = io.BytesIO()
+                    pil_img.save(png_buffer, format='PNG')
+                    image_data = png_buffer.getvalue()
+                    
+        except ImportError:
+            logger.warning("Pillow not available for image conversion, saving as-is")
+        except Exception as e:
+            logger.warning(f"Image conversion failed: {e}, saving as-is")
+        
+        write_bytes(img_path, image_data)
         logger.info(f"Saved image to {img_path}")
     
     # Audio via ElevenLabs
@@ -81,30 +114,113 @@ async def node_render(state: OrchestrationState) -> OrchestrationState:
     write_text(srt_path, srt_text)
     logger.info(f"Created SRT file: {srt_path}")
 
-    # Per-scene render
-    for sc in sorted(state.spec.scenes, key=lambda s: s.id):
-        img = os.path.join(state.tmp_dir, f"scene_{sc.id}.png")
-        aud = os.path.join(state.tmp_dir, f"scene_{sc.id}.mp3")
-        out = os.path.join(state.tmp_dir, f"scene_{sc.id}.mp4")
-        logger.info(f"Rendering scene {sc.id}: img={os.path.exists(img)}, audio={os.path.exists(aud)}")
-        ffmpeg_scene_clip(img, aud, out, sc.duration_sec)
-        if os.path.exists(out):
-            logger.info(f"Scene {sc.id} video created successfully: {out}")
-        else:
-            logger.error(f"Scene {sc.id} video creation FAILED: {out}")
-        state.scene_video_paths.append(out)
+    # If external render worker is configured, offload rendering
+    if RENDER_WORKER_URL:
+        import httpx
+        logger.info(f"Using external render worker at {RENDER_WORKER_URL}")
+        # Prepare payload: scene assets and metadata
+        scenes_payload = []
+        for sc in sorted(state.spec.scenes, key=lambda s: s.id):
+            img = os.path.join(state.tmp_dir, f"scene_{sc.id}.png")
+            aud = os.path.join(state.tmp_dir, f"scene_{sc.id}.mp3")
+            scenes_payload.append({
+                "id": sc.id,
+                "duration_sec": sc.duration_sec,
+                "image_path": img,
+                "audio_path": aud,
+            })
+        # We will upload files as multipart form-data to the worker
+        files = []
+        try:
+            for sc in scenes_payload:
+                # Single 'files' field makes FastAPI receive as List[UploadFile]
+                # Validate files exist and log sizes for debugging
+                try:
+                    img_size = os.path.getsize(sc['image_path'])
+                    aud_size = os.path.getsize(sc['audio_path'])
+                    logger.info(f"Scene {sc['id']} file sizes: image={img_size}B, audio={aud_size}B")
+                except FileNotFoundError:
+                    logger.error(f"Missing file(s) for scene {sc['id']}: img={os.path.exists(sc['image_path'])}, aud={os.path.exists(sc['audio_path'])}")
+                files.append(("files", (f"scene_{sc['id']}.png", open(sc['image_path'], "rb"), "image/png")))
+                files.append(("files", (f"scene_{sc['id']}.mp3", open(sc['audio_path'], "rb"), "audio/mpeg")))
+            files.append(("subs", ("story.srt", open(srt_path, "rb"), "application/x-subrip")))
+            import json
+            scenes_data = json.dumps([{k: v for k, v in sc.items() if k in ("id", "duration_sec")} for sc in scenes_payload])
+            # Send scenes as form data, not as a file
+            form_data = {"scenes": scenes_data}
+            async with httpx.AsyncClient(timeout=300) as client:
+                out_path = os.path.join(state.tmp_dir, "final.mp4")
+                # Stream the response to disk to avoid large memory usage and truncation issues
+                async with client.stream("POST", f"{RENDER_WORKER_URL}/render", files=files, data=form_data) as resp:
+                    if resp.status_code >= 400:
+                        body_text = await resp.aread()
+                        logger.error(
+                            "Render worker failed: status=%s, body=%s, headers=%s",
+                            resp.status_code,
+                            body_text.decode("utf-8", errors="ignore"),
+                            dict(resp.headers),
+                        )
+                        logger.warning("Render worker failed, falling back to local ffmpeg rendering")
+                        raise Exception("Render worker failed, using fallback")
 
-    # Concat + burn subs
-    tmp_concat = os.path.join(state.tmp_dir, "tmp_concat.mp4")
-    logger.info(f"Concatenating {len(state.scene_video_paths)} scene videos")
-    ffmpeg_concat(state.scene_video_paths, tmp_concat)
-    logger.info(f"Concatenation completed: {os.path.exists(tmp_concat)}")
+                    content_type = resp.headers.get("content-type", "")
+                    if "video/mp4" not in content_type.lower():
+                        # Read a small sample for logging and then fall back
+                        preview = (await resp.aread())[:512]
+                        logger.error("Unexpected worker content-type: %s, preview=%r", content_type, preview)
+                        raise Exception("Render worker returned non-video content, using fallback")
+
+                    with open(out_path, "wb") as f:
+                        async for chunk in resp.aiter_bytes():
+                            if chunk:
+                                f.write(chunk)
+
+                # Basic sanity check on resulting file size
+                try:
+                    file_size = os.path.getsize(out_path)
+                except Exception:
+                    file_size = 0
+                if file_size <= 1024:  # Less than 1KB is suspicious/corrupt
+                    logger.error("Worker video too small (%d bytes), falling back to local rendering", file_size)
+                    raise Exception("Worker produced tiny file, using fallback")
+
+                state.final_path = out_path
+                logger.info(f"Received final video from worker: size={file_size} bytes")
+                return state
+        except Exception as e:
+            logger.warning(f"External render worker failed: {e}. Falling back to local ffmpeg rendering.")
+            # Fall through to local rendering below
+        finally:
+            # Close file handles
+            for _, (_name, fh, _ctype) in files:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+
+    # Fallback: local ffmpeg rendering (may not work on serverless)
+    logger.warning("Attempting local ffmpeg fallback rendering")
+    try:
+        for sc in sorted(state.spec.scenes, key=lambda s: s.id):
+            img = os.path.join(state.tmp_dir, f"scene_{sc.id}.png")
+            aud = os.path.join(state.tmp_dir, f"scene_{sc.id}.mp3")
+            out = os.path.join(state.tmp_dir, f"scene_{sc.id}.mp4")
+            logger.info(f"Rendering scene {sc.id}: img={os.path.exists(img)}, audio={os.path.exists(aud)}")
+            ffmpeg_scene_clip(img, aud, out, sc.duration_sec)
+            state.scene_video_paths.append(out)
+
+        tmp_concat = os.path.join(state.tmp_dir, "tmp_concat.mp4")
+        ffmpeg_concat(state.scene_video_paths, tmp_concat)
+        final_path = os.path.join(state.tmp_dir, "final.mp4")
+        ffmpeg_burn_subs(tmp_concat, srt_path, final_path)
+        state.final_path = final_path
+        logger.info("Local ffmpeg rendering completed successfully")
+        return state
+    except Exception as ffmpeg_error:
+        logger.error(f"Local ffmpeg rendering also failed: {ffmpeg_error}")
+        # If both external worker and local ffmpeg fail, we need to raise an error
+        raise RuntimeError("Both external render worker and local ffmpeg rendering failed. Please check the render worker service or run locally.")
     
-    final_path = os.path.join(state.tmp_dir, "final.mp4")
-    logger.info(f"Burning subtitles into final video")
-    ffmpeg_burn_subs(tmp_concat, srt_path, final_path)
-    logger.info(f"Final video created: {os.path.exists(final_path)}")
-    state.final_path = final_path
     return state
 
 def build_graph():

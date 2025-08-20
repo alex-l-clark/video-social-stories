@@ -111,7 +111,7 @@ async def start_job(req: StoryRequest):
     job = JobRecord(job_id)
     JOBS[job_id] = job
     
-    logger.info(f"Running job {job_id} synchronously to avoid serverless background task issues")
+    logger.info(f"Running job {job_id} synchronously for serverless compatibility")
     
     try:
         job.status = "running"
@@ -131,6 +131,8 @@ async def start_job(req: StoryRequest):
         job.error = str(e)
         job.status = "failed"
         logger.error(f"Job {job_id} failed: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         if hasattr(job, 'tmp_dir') and job.tmp_dir:
             shutil.rmtree(job.tmp_dir, ignore_errors=True)
     

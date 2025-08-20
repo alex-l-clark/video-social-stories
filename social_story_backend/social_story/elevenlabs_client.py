@@ -49,6 +49,11 @@ async def tts_to_bytes(text: str, max_retries: int = 3) -> bytes:
                 else:
                     logger.error(f"ElevenLabs rate limit exceeded after {max_retries + 1} attempts. Please wait before trying again.")
                     raise
+            elif e.response.status_code >= 500 and attempt < max_retries:  # Server errors, retry
+                wait_time = 2 ** attempt
+                logger.warning(f"ElevenLabs server error ({e.response.status_code}). Retrying in {wait_time} seconds... (attempt {attempt + 1}/{max_retries + 1})")
+                await asyncio.sleep(wait_time)
+                continue
             else:
                 # Other HTTP errors, don't retry
                 logger.error(f"ElevenLabs API error {e.response.status_code}: {e.response.text}")

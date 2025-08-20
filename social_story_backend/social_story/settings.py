@@ -23,13 +23,21 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")
 REPLICATE_POLL_INTERVAL_MS = int(os.getenv("REPLICATE_POLL_INTERVAL_MS", "1500"))
 REPLICATE_POLL_TIMEOUT_S = int(os.getenv("REPLICATE_POLL_TIMEOUT_S", "120"))
 
+# Optional: External render worker URL (Option A)
+RENDER_WORKER_URL = os.getenv("RENDER_WORKER_URL", "").strip()
+
 VIDEO_WIDTH = int(os.getenv("VIDEO_WIDTH", "1280"))
 VIDEO_HEIGHT = int(os.getenv("VIDEO_HEIGHT", "720"))
 FPS = int(os.getenv("FPS", "30"))
 
-# Comma-separated list of allowed origins for CORS (e.g., "https://app.vercel.app,https://www.example.com")
-# For local development, we'll allow localhost on common ports
-ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()]
+# Comma-separated list of allowed origins for CORS (e.g., "https://app.vercel.app,https://www.example.com").
+# IMPORTANT: Default to wildcard in production unless explicitly set, to avoid blocking the frontend due to CORS.
+_allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
+if _allowed_origins_env:
+    ALLOWED_ORIGINS = [o.strip() for o in _allowed_origins_env.split(",") if o.strip()]
+else:
+    # Fall back to permissive default. For local development, you can set ALLOWED_ORIGINS explicitly.
+    ALLOWED_ORIGINS = ["*"]
 
 def has_all_keys() -> bool:
     keys_present = all([OPENAI_API_KEY, REPLICATE_API_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID])
