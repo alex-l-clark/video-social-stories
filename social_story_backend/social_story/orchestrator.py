@@ -148,10 +148,18 @@ async def node_render(state: OrchestrationState) -> OrchestrationState:
             scenes_data = json.dumps([{k: v for k, v in sc.items() if k in ("id", "duration_sec")} for sc in scenes_payload])
             # Send scenes as form data, not as a file
             form_data = {"scenes": scenes_data}
+            
+            logger.info(f"Sending request to render worker: {RENDER_WORKER_URL}/render")
+            logger.info(f"Total files to upload: {len(files)}")
+            logger.info(f"Scenes data: {scenes_data}")
+            
             async with httpx.AsyncClient(timeout=300) as client:
                 out_path = os.path.join(state.tmp_dir, "final.mp4")
                 # Stream the response to disk to avoid large memory usage and truncation issues
                 async with client.stream("POST", f"{RENDER_WORKER_URL}/render", files=files, data=form_data) as resp:
+                    logger.info(f"Render worker response status: {resp.status_code}")
+                    logger.info(f"Render worker response headers: {dict(resp.headers)}")
+                    
                     if resp.status_code >= 400:
                         body_text = await resp.aread()
                         logger.error(
@@ -164,16 +172,27 @@ async def node_render(state: OrchestrationState) -> OrchestrationState:
                         raise Exception("Render worker failed, using fallback")
 
                     content_type = resp.headers.get("content-type", "")
+                    logger.info(f"Render worker content-type: {content_type}")
+                    
                     if "video/mp4" not in content_type.lower():
                         # Read a small sample for logging and then fall back
                         preview = (await resp.aread())[:512]
                         logger.error("Unexpected worker content-type: %s, preview=%r", content_type, preview)
                         raise Exception("Render worker returned non-video content, using fallback")
 
+                    # Stream response to file with progress logging
+                    total_bytes = 0
+                    chunk_count = 0
                     with open(out_path, "wb") as f:
                         async for chunk in resp.aiter_bytes():
                             if chunk:
                                 f.write(chunk)
+                                total_bytes += len(chunk)
+                                chunk_count += 1
+                                if chunk_count % 100 == 0:  # Log every 100 chunks
+                                    logger.info(f"Received {chunk_count} chunks, total bytes: {total_bytes}")
+
+                    logger.info(f"Finished receiving from render worker: {chunk_count} chunks, {total_bytes} total bytes")
 
                 # Basic sanity check on resulting file size
                 try:
@@ -183,6 +202,17 @@ async def node_render(state: OrchestrationState) -> OrchestrationState:
                 if file_size <= 1024:  # Less than 1KB is suspicious/corrupt
                     logger.error("Worker video too small (%d bytes), falling back to local rendering", file_size)
                     raise Exception("Worker produced tiny file, using fallback")
+
+                # Additional validation: check if file is actually readable and has valid MP4 header
+                try:
+                    with open(out_path, "rb") as f:
+                        header = f.read(12)  # Read MP4 header
+                        if not header.startswith(b'\x00\x00\x00') and not header.startswith(b'ftyp'):
+                            logger.error("Worker video has invalid MP4 header, falling back to local rendering")
+                            raise Exception("Worker produced invalid MP4 file, using fallback")
+                except Exception as e:
+                    logger.error("Could not validate MP4 header: %s, falling back to local rendering", e)
+                    raise Exception("Worker produced unreadable file, using fallback")
 
                 state.final_path = out_path
                 logger.info(f"Received final video from worker: size={file_size} bytes")

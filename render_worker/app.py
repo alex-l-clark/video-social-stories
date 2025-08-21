@@ -12,7 +12,23 @@ def _run(cmd: str):
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    try:
+        # Check if ffmpeg is available
+        result = subprocess.run(["ffmpeg", "-version"], 
+                              capture_output=True, text=True, timeout=5)
+        ffmpeg_ok = result.returncode == 0
+        ffmpeg_version = result.stdout.split('\n')[0] if ffmpeg_ok else "Not available"
+    except Exception as e:
+        ffmpeg_ok = False
+        ffmpeg_version = f"Error: {str(e)}"
+    
+    return {
+        "ok": True,
+        "ffmpeg_available": ffmpeg_ok,
+        "ffmpeg_version": ffmpeg_version,
+        "temp_dir": tempfile.gettempdir(),
+        "memory_usage": f"{os.getpid()}"
+    }
 
 @app.post("/render")
 async def render(
@@ -21,6 +37,7 @@ async def render(
     # dynamic list of files image_{id}, audio_{id}
     files: List[UploadFile] = File(None),
 ):
+    tmp = None
     try:
         scenes_meta = json.loads(scenes.replace("'", '"'))
     except Exception:
@@ -105,41 +122,49 @@ async def render(
              f"-c:v libx264 -preset ultrafast -crf 28 -c:a copy -threads 1 -bufsize 512k "
              f"-max_muxing_queue_size 512 {shlex.quote(final_path)}")
 
-        # Get file size first
+        # Get file size first and validate it's not corrupted
         file_size = os.path.getsize(final_path)
+        if file_size <= 1024:  # Less than 1KB is suspicious/corrupt
+            raise RuntimeError(f"Generated video file is too small ({file_size} bytes), likely corrupted")
+        
+        # Read the entire file into memory to ensure it's complete before streaming
+        with open(final_path, "rb") as f:
+            video_data = f.read()
+        
+        # Verify the data is actually complete
+        if len(video_data) != file_size:
+            raise RuntimeError(f"File size mismatch: expected {file_size}, got {len(video_data)}")
+        
+        # Clean up temporary files before streaming
+        try:
+            shutil.rmtree(tmp, ignore_errors=True)
+            tmp = None  # Mark as cleaned up
+        except Exception as e:
+            print(f"Warning: Could not clean up temp dir: {e}")
         
         def iterfile():
-            # Use smaller chunks and force garbage collection periodically
-            chunk_size = 64 * 1024  # 64KB chunks for better memory management
-            chunks_read = 0
-            try:
-                with open(final_path, "rb") as f:
-                    while True:
-                        chunk = f.read(chunk_size)
-                        if not chunk:
-                            break
-                        yield chunk
-                        chunks_read += 1
-                        # Force GC every 100 chunks (~6.4MB)
-                        if chunks_read % 100 == 0:
-                            gc.collect()
-            finally:
-                # Only clean up after streaming is completely finished
-                try:
-                    import shutil
-                    shutil.rmtree(tmp, ignore_errors=True)
-                except:
-                    pass
+            # Stream from memory instead of file to avoid file handle issues
+            chunk_size = 64 * 1024  # 64KB chunks
+            for i in range(0, len(video_data), chunk_size):
+                yield video_data[i:i + chunk_size]
 
         headers = {
             "Content-Disposition": 'attachment; filename="social-story.mp4"',
             "Content-Length": str(file_size)
         }
         return StreamingResponse(iterfile(), media_type="video/mp4", headers=headers)
+        
     except Exception as e:
+        # Clean up on error
+        if tmp:
+            try:
+                import shutil
+                shutil.rmtree(tmp, ignore_errors=True)
+            except:
+                pass
         raise HTTPException(500, str(e))
     finally:
-        # Force garbage collection only
+        # Force garbage collection
         gc.collect()
 
 

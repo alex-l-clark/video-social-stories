@@ -49,11 +49,33 @@ async def render_story(req: StoryRequest):
         raise HTTPException(500, "Failed to render video")
     def iterfile(path, tmp_dir):
         try:
+            # Validate file before streaming
+            if not os.path.exists(path):
+                raise RuntimeError(f"Video file not found: {path}")
+            
+            file_size = os.path.getsize(path)
+            if file_size <= 1024:  # Less than 1KB is suspicious
+                raise RuntimeError(f"Video file too small ({file_size} bytes), likely corrupted")
+            
+            logger.info(f"Streaming video file: {path}, size: {file_size} bytes")
+            
             with safe_open_binary(path) as f:
                 for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    if not chunk:  # Safety check
+                        break
                     yield chunk
+                    
+            logger.info(f"Successfully streamed video file: {path}")
+        except Exception as e:
+            logger.error(f"Error streaming video file {path}: {str(e)}")
+            raise
         finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+            # Clean up temporary directory
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                logger.info(f"Cleaned up temporary directory: {tmp_dir}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to clean up {tmp_dir}: {cleanup_error}")
     filename = f"social-story-{job_id}.mp4"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(
@@ -156,11 +178,33 @@ def job_download(job_id: str):
         raise HTTPException(409, "job not ready")
     def iterfile(path, tmp_dir):
         try:
+            # Validate file before streaming
+            if not os.path.exists(path):
+                raise RuntimeError(f"Video file not found: {path}")
+            
+            file_size = os.path.getsize(path)
+            if file_size <= 1024:  # Less than 1KB is suspicious
+                raise RuntimeError(f"Video file too small ({file_size} bytes), likely corrupted")
+            
+            logger.info(f"Streaming video file: {path}, size: {file_size} bytes")
+            
             with safe_open_binary(path) as f:
                 for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    if not chunk:  # Safety check
+                        break
                     yield chunk
+                    
+            logger.info(f"Successfully streamed video file: {path}")
+        except Exception as e:
+            logger.error(f"Error streaming video file {path}: {str(e)}")
+            raise
         finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+            # Clean up temporary directory and remove job
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                logger.info(f"Cleaned up temporary directory: {tmp_dir}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to clean up {tmp_dir}: {cleanup_error}")
             JOBS.pop(job_id, None)
     filename = f"social-story-{job.job_id}.mp4"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
