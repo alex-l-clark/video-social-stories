@@ -32,5 +32,16 @@ venv/
 .vscode/
 .idea/
 
+# Security: Block all certificate and key files
+*.key
+*.pem
+*.crt
+*.p12
+*.der
+*.pfx
+
+# Test artifacts
+render_worker/tmp_smoke/
+render_worker/**/tmp_smoke/
 
 .vercel
