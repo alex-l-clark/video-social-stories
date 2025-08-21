@@ -1,6 +1,4 @@
 # Production Link - https://social-story-frontend-gu6erq7q1-alexs-projects-43af42f1.vercel.app/
-
-
 # Video Social Stories App - Tech Stack Overview
 
 A comprehensive AI-powered application that creates personalized video stories for autistic students to learn social skills. Think of it as a smart video creator that understands exactly what kind of story someone needs.
@@ -165,7 +163,6 @@ Defines exactly what information is needed:
 
 **⚠️ Important Performance Notes:**
 - **Production Performance:** The current production version takes about **2 minutes** to return a video
-
 - **Best Performance:** For development and testing, run locally for fastest results
 
 **Local Setup (Recommended for best performance):**
@@ -181,7 +178,6 @@ uvicorn social_story.app:app --reload
 Teachers and parents can access the app through the production link, which provides a stable, always-available service. While it may take a few minutes to generate videos, this ensures reliable access without requiring technical setup.
 
 - **Mobile Compatibility:** The production app does **not work on mobile devices** - desktop/tablet only
-
 
 ## 🤔 Why These Technology Choices?
 
@@ -201,7 +197,7 @@ pip install pre-commit
 pre-commit install
 ```
 
-See [SECURITY.md](SECURITY.md) for complete security guidelines and [REPORT.md](REPORT.md) for details on recent security improvements.
+See [SECURITY.md](SECURITY.md) for complete security guidelines.
 
 ---
 
