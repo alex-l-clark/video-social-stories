@@ -2,19 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "social_story/app.py",
+      "src": "app.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "social_story/app.py"
+      "dest": "app.py"
     }
-  ],
-  "functions": {
-    "social_story/app.py": {
-      "maxDuration": 300
-    }
-  }
+  ]
 }
