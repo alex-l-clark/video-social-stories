@@ -1,1 +1,13 @@
 .vercel
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+*.log
+uvicorn.log
+.env
+.env.*
+.venv/
+venv/
