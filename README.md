@@ -1,4 +1,4 @@
-# Production Link - https://social-story-frontend-gu6erq7q1-alexs-projects-43af42f1.vercel.app/
+# [Production Link](https://social-story-frontend-gu6erq7q1-alexs-projects-43af42f1.vercel.app/) - 
 # Video Social Stories App - Tech Stack Overview
 
 A comprehensive AI-powered application that creates personalized video stories for autistic students to learn social skills. Think of it as a smart video creator that understands exactly what kind of story someone needs.
