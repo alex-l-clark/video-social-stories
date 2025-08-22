@@ -1,12 +1,13 @@
 {
-  "version": 2,
-  "framework": "nextjs",
-  "functions": {
-    "app/api/render/route.ts": {
-      "maxDuration": 300
-    },
-    "app/api/render-smoke/route.ts": {
-      "maxDuration": 300
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
-  }
+  ]
 }
