@@ -151,7 +151,7 @@ export async function GET(request: NextRequest) {
       
       console.log(`[${requestId}] Streaming MP4 response: ${size} bytes`);
       
-      return new NextResponse(buffer, {
+      return new NextResponse(new Uint8Array(buffer), {
         status: 200,
         headers,
       });
