@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { downloadMp4FromRoute, getDownloadCapabilities } from '@/utils/downloadMp4';
+import { downloadMp4FromRoute, getDownloadCapabilities } from '../utils/downloadMp4';
 
 export default function Home() {
   const [jobId, setJobId] = useState('');
