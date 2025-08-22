@@ -155,16 +155,34 @@ Defines exactly what information is needed:
 **Video Processing:** FFmpeg (industry standard for video editing)
 **Deployment:** Vercel (cloud hosting platform)
 **Data Validation:** Pydantic (ensures data is correct format)
+**Frontend:** Next.js with hardened MP4 proxy routes
+**Mobile Support:** Mobile-optimized download utilities
 
 ## 🚀 Getting Started
 
-### For Developers & Testing
+### Frontend (Next.js)
 
-**⚠️ Important Performance Notes:**
-- **Production Performance:** The current production version takes about **2 minutes** to return a video
-- **Best Performance:** For development and testing, run locally for fastest results
+**Setup:**
+```bash
+cd social_story_frontend
+npm install
+cp .env.example .env.local
+# Edit .env.local with your backend URL
+npm run dev
+```
 
-**Local Setup (Recommended for best performance):**
+**Environment Variables:**
+```bash
+BACKEND_RENDER_URL=https://your-backend.vercel.app
+MIN_RENDER_BYTES=500000
+RENDER_FETCH_ATTEMPTS=3
+RENDER_RETRY_DELAY_MS=1200
+USE_DIRECT_DOWNLOAD=false
+```
+
+### Backend (Python FastAPI)
+
+**Local Setup:**
 ```bash
 cd social_story_backend
 python3 -m venv .venv && source .venv/bin/activate
@@ -172,11 +190,27 @@ pip install -r requirements.txt
 uvicorn social_story.app:app --reload
 ```
 
+### Testing Video Downloads
+
+**Smoke Test:**
+```bash
+# Test the full pipeline
+./scripts/smoke_render.sh https://your-app.vercel.app
+
+# Or test locally
+./scripts/smoke_render.sh http://localhost:3000
+```
+
+**Manual Testing:**
+1. Visit the frontend at `http://localhost:3000`
+2. Enter a job ID from a completed render
+3. Click "Download MP4" to test mobile-optimized download
+
 ### For Real Teachers & End Users
 
-Teachers and parents can access the app through the production link, which provides a stable, always-available service. While it may take a few minutes to generate videos, this ensures reliable access without requiring technical setup.
-
-- **Mobile Compatibility:** The production app does **not work on mobile devices** - desktop/tablet only
+- **✅ Mobile Compatibility:** Now works on all devices including iOS Safari and Android Chrome
+- **✅ Reliable Downloads:** Includes retry logic and size validation
+- **✅ Better Performance:** Optimized headers and buffering for faster delivery
 
 ## 🤔 Why These Technology Choices?
 
@@ -185,6 +219,25 @@ Teachers and parents can access the app through the production link, which provi
 **Serverless (Vercel):** Only pay for what you use, scales automatically
 **Separate render worker:** Video processing needs more power than serverless allows
 **LangGraph:** Makes it easy to build complex AI workflows that can be debugged
+
+## 🎬 Video Delivery & Mobile Support
+
+### MP4 Proxy Route (`/api/render`)
+- **Hardened Node.js Runtime**: 5-minute timeout, full buffering
+- **Retry Logic**: Up to 3 attempts with size validation
+- **Proper Headers**: Content-Type, Content-Length, Accept-Ranges, Cache-Control
+- **Correlation IDs**: Request tracking for debugging
+
+### Mobile-Optimized Downloads
+- **iOS Safari Support**: User gesture requirement, blob-based downloads
+- **Android Chrome Support**: Proper MIME types and error handling
+- **Size Validation**: Client and server-side validation
+- **Download Utilities**: `utils/downloadMp4.ts` with platform detection
+
+### Testing & Monitoring
+- **Smoke Test Endpoint**: `/api/render-smoke` for automated testing
+- **CI/CD Integration**: GitHub Actions for deployment verification
+- **Detailed Logging**: Request IDs, file sizes, durations
 
 ## 🔒 Security Setup
 

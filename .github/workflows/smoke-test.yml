@@ -1,0 +1,58 @@
+name: Video Render Smoke Test
+
+on:
+  push:
+    branches: [main]
+  # Optionally enable for PRs:
+  # pull_request:
+  #   branches: [main]
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq
+      
+      - name: Wait for deployment
+        run: |
+          echo "Waiting 60 seconds for Vercel deployment to be ready..."
+          sleep 60
+      
+      - name: Run smoke test
+        env:
+          # Use your actual Vercel deployment URL
+          TEST_URL: "https://your-app.vercel.app"
+        run: |
+          # Make script executable
+          chmod +x ./scripts/smoke_render.sh
+          
+          # Run the smoke test
+          ./scripts/smoke_render.sh "$TEST_URL"
+      
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-artifacts
+          path: artifacts/
+          retention-days: 7
+      
+      - name: Report results
+        if: always()
+        run: |
+          echo "Smoke test completed. Check artifacts for details."
+          if [ -f artifacts/smoke_result.json ]; then
+            echo "Smoke test result:"
+            cat artifacts/smoke_result.json | jq '.'
+          fi
+          if [ -f artifacts/test.mp4 ]; then
+            BYTES=$(wc -c < artifacts/test.mp4)
+            echo "Downloaded video size: $BYTES bytes"
+          fi

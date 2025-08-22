@@ -1,19 +1,19 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "dist/**/*",
-      "use": "@vercel/static"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/dist/$1"
+  "framework": "nextjs",
+  "functions": {
+    "app/api/render/route.ts": {
+      "maxDuration": 300
     },
-    {
-      "src": "/",
-      "dest": "/dist/index.html"
+    "app/api/render-smoke/route.ts": {
+      "maxDuration": 300
     }
-  ]
+  },
+  "env": {
+    "BACKEND_RENDER_URL": "@backend-render-url",
+    "MIN_RENDER_BYTES": "@min-render-bytes",
+    "RENDER_FETCH_ATTEMPTS": "@render-fetch-attempts",
+    "RENDER_RETRY_DELAY_MS": "@render-retry-delay-ms",
+    "USE_DIRECT_DOWNLOAD": "@use-direct-download"
+  }
 }
